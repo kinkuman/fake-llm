@@ -1,5 +1,7 @@
 # fake-llm
 
+[日本語 README](README.ja.md)
+
 A tiny fake LLM server for local testing.
 
 It pretends to be an LLM through a small Chat Completions-compatible API shape,

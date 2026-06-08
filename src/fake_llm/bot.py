@@ -121,6 +121,9 @@ class MarkovChain:
 class FakeLLM:
     """単純なルールベース返答器で LLM のふりをする本体クラス。"""
 
+    pattern_rate = 0.8
+    random_rate = 0.1
+
     def __init__(self, data_dir=None, seed=None):
         """fake-llm の返答器を作る。
 
@@ -140,16 +143,19 @@ class FakeLLM:
         if not user_text:
             return random.choice(self.dictionary.random_responses)
         words = tokenize(user_text)
-        response = self._pattern_response(user_text)
-        if response is None:
-            response = self._template_response(words)
-        if response is None and self.markov.table and random.random() < 0.35:
-            response = self.markov.generate(keyword=last_keyword(words))
-        if not response:
-            response = random.choice(self.dictionary.random_responses)
+        response = self._choose_response(user_text, words)
         self.markov.learn(words)
         self.history.append((user_text, response))
         return response
+
+    def _choose_response(self, text, words):
+        """pattern 80%、random 10%、what 10% の比率で返答を選ぶ。"""
+        number = random.random()
+        if number < self.pattern_rate:
+            return self._pattern_response(text) or self._random_response()
+        if number < self.pattern_rate + self.random_rate:
+            return self._random_response()
+        return self._what_response(text)
 
     def _pattern_response(self, text):
         """最初に一致した正規表現ルールからランダムに返答を返す。"""
@@ -157,6 +163,14 @@ class FakeLLM:
             if pattern.search(text):
                 return random.choice(responses)
         return None
+
+    def _random_response(self):
+        """random.txt からランダム返答を返す。"""
+        return random.choice(self.dictionary.random_responses)
+
+    def _what_response(self, text):
+        """入力内容を聞き返す WhatResponder 風の返答を返す。"""
+        return f"{text}ってなに？"
 
     def _template_response(self, words):
         """キーワード数に合うテンプレートを埋めて返答を作る。"""
