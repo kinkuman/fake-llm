@@ -94,6 +94,7 @@ def make_handler(bot):
                 return
             payload = self._read_json()
             response = chat_completion_response(bot, payload)
+            bot.save()
             if payload.get("stream"):
                 self._send_stream(response)
             else:
@@ -151,9 +152,9 @@ def chunk_text(text, size=8):
         yield text[index:index + size]
 
 
-def serve(host="127.0.0.1", port=8000, data_dir=None, quiet=False):
+def serve(host="127.0.0.1", port=8000, data_dir=None, state_file=None, quiet=False):
     """ローカル fake-llm HTTP server を起動して待ち受け続ける。"""
-    bot = FakeLLM(data_dir=data_dir)
+    bot = FakeLLM(data_dir=data_dir, state_file=state_file)
     server = ThreadingHTTPServer((host, port), make_handler(bot))
     server.quiet = quiet
     print(f"Serving on http://{host}:{port}")
@@ -167,6 +168,7 @@ def main(argv=None):
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--data-dir")
+    parser.add_argument("--state-file")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
-    serve(host=args.host, port=args.port, data_dir=args.data_dir, quiet=args.quiet)
+    serve(host=args.host, port=args.port, data_dir=args.data_dir, state_file=args.state_file, quiet=args.quiet)
