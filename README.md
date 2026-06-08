@@ -5,12 +5,15 @@
 A tiny fake LLM server for local testing.
 
 It pretends to be an LLM through a small Chat Completions-compatible API shape,
-but it is only a local rule-based toy. It is not affiliated with OpenAI.
+but it is only a local rule-based toy.
+
+Current version: `0.1.0`
 
 ## Quick Start
 
 ```bash
 uv sync
+uv run fake-llm --version
 uv run fake-llm chat
 ```
 
@@ -95,11 +98,33 @@ The state file also stores learned random responses, learned pattern rules,
 learned templates, and mood. Bundled dictionary files are not modified by
 conversation.
 
+The state file is treated as short-term memory, not as a long-term knowledge
+base, so learned entries are capped:
+
+- Learned random responses: latest 50 entries
+- Learned pattern rules: latest 100 entries
+- Learned templates: latest 30 entries per keyword count
+- Markov starts: latest 200 entries
+- Markov prefixes: latest 400 entries
+- Markov suffixes: latest 20 entries per prefix
+
 You can also choose the state file explicitly:
 
 ```bash
 uv run fake-llm chat --state-file ./state.json
 uv run fake-llm serve --state-file ./state.json
+```
+
+Inspect the saved state:
+
+```bash
+uv run fake-llm state show --state-file ./state.json
+```
+
+Reset the saved state:
+
+```bash
+uv run fake-llm state reset --state-file ./state.json
 ```
 
 ## License

@@ -3,7 +3,16 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from fake_llm.bot import Dictionary, Emotion, FakeLLM, PatternRule, tokenize
+from fake_llm.bot import (
+    MAX_LEARNED_RANDOM,
+    MAX_LEARNED_TEMPLATES_PER_COUNT,
+    MAX_MARKOV_STARTS,
+    Dictionary,
+    Emotion,
+    FakeLLM,
+    PatternRule,
+    tokenize,
+)
 
 
 class BotTest(unittest.TestCase):
@@ -95,6 +104,23 @@ class BotTest(unittest.TestCase):
         self.assertIn("りんごとみかんを食べる", bot.dictionary.random_responses)
         self.assertTrue(bot.dictionary.learned_patterns)
         self.assertIn("{noun}と{noun}を食べる", bot.dictionary.templates[2])
+
+    def test_learned_dictionary_limits_keep_latest_items(self):
+        bot = FakeLLM(seed=1)
+        for index in range(MAX_LEARNED_RANDOM + 5):
+            text = f"りんご{index}とみかん{index}を食べる"
+            bot.dictionary.study(text, tokenize(text))
+        self.assertEqual(len(bot.dictionary.learned_random), MAX_LEARNED_RANDOM)
+        self.assertNotIn("りんご0とみかん0を食べる", bot.dictionary.learned_random)
+        self.assertIn(f"りんご{MAX_LEARNED_RANDOM + 4}とみかん{MAX_LEARNED_RANDOM + 4}を食べる", bot.dictionary.learned_random)
+        self.assertLessEqual(len(bot.dictionary.learned_templates[2]), MAX_LEARNED_TEMPLATES_PER_COUNT)
+
+    def test_markov_limits_keep_latest_starts(self):
+        bot = FakeLLM(seed=1)
+        for index in range(MAX_MARKOV_STARTS + 5):
+            bot.markov.learn(tokenize(f"りんご{index}とみかん{index}を食べる"))
+        self.assertEqual(len(bot.markov.starts), MAX_MARKOV_STARTS)
+        self.assertNotIn(("りんご", "0"), bot.markov.starts)
 
 
 if __name__ == "__main__":

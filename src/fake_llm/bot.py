@@ -17,6 +17,12 @@ from janome.tokenizer import Tokenizer
 DEFAULT_MODEL = "fake-llm"
 TOKENIZER = Tokenizer()
 KEYWORD_POS_DETAILS = {"一般", "固有名詞", "サ変接続", "形容動詞語幹"}
+MAX_LEARNED_RANDOM = 50
+MAX_LEARNED_PATTERNS = 100
+MAX_LEARNED_TEMPLATES_PER_COUNT = 30
+MAX_MARKOV_STARTS = 200
+MAX_MARKOV_PREFIXES = 400
+MAX_MARKOV_SUFFIXES_PER_PREFIX = 20
 
 
 class Dictionary:
@@ -33,6 +39,9 @@ class Dictionary:
         self.random_responses = self._load_lines("random.txt")
         self.patterns = self._load_patterns("pattern.tsv")
         self.templates = self._load_templates("template.tsv")
+        self.base_random_responses = list(self.random_responses)
+        self.base_patterns = list(self.patterns)
+        self.base_templates = {count: list(templates) for count, templates in self.templates.items()}
         self.learned_random = []
         self.learned_patterns = []
         self.learned_templates = {}
@@ -88,6 +97,7 @@ class Dictionary:
         self.study_random(text)
         self.study_patterns(text, words)
         self.study_templates(words)
+        self.trim_learned()
 
     def study_random(self, text):
         """発話全体を random 返答候補として覚える。"""
@@ -159,6 +169,27 @@ class Dictionary:
                     self.templates[count].append(template)
                 if template not in self.learned_templates[count]:
                     self.learned_templates[count].append(template)
+        self.trim_learned()
+
+    def trim_learned(self):
+        """state.json が短期記憶として扱える量に学習辞書を抑える。"""
+        self.learned_random = keep_latest_unique(self.learned_random, MAX_LEARNED_RANDOM)
+        self.learned_patterns = self.learned_patterns[-MAX_LEARNED_PATTERNS:]
+        self.learned_templates = {
+            count: keep_latest_unique(templates, MAX_LEARNED_TEMPLATES_PER_COUNT)
+            for count, templates in self.learned_templates.items()
+        }
+        self._rebuild_merged_entries()
+
+    def _rebuild_merged_entries(self):
+        """上限で捨てた学習項目が通常返答候補に残り続けないよう再構築する。"""
+        self.random_responses = keep_latest_unique(self.base_random_responses + self.learned_random, None)
+        self.patterns = self.base_patterns + self.learned_patterns
+
+        self.templates = {count: list(templates) for count, templates in self.base_templates.items()}
+        for count, learned in self.learned_templates.items():
+            current = self.templates.get(count, [])
+            self.templates[count] = keep_latest_unique(current + learned, None)
 
 
 class PatternRule:
@@ -274,6 +305,7 @@ class MarkovChain:
         for index in range(len(padded) - 2):
             key = (padded[index], padded[index + 1])
             self.table.setdefault(key, []).append(padded[index + 2])
+        self.trim()
 
     def generate(self, keyword=None, max_words=30):
         """任意のキーワード付近から短い文章断片を生成する。"""
@@ -300,6 +332,7 @@ class MarkovChain:
 
     def to_dict(self):
         """JSON 保存できる dict へ変換する。"""
+        self.trim()
         table = []
         for key, suffixes in self.table.items():
             table.append({
@@ -321,7 +354,15 @@ class MarkovChain:
             if len(prefix) != 2:
                 continue
             chain.table[(prefix[0], prefix[1])] = list(item.get("suffixes", []))
+        chain.trim()
         return chain
+
+    def trim(self):
+        """Markov 状態が保存用キャッシュとして肥大化しすぎないよう抑える。"""
+        self.starts = keep_latest_unique(self.starts, MAX_MARKOV_STARTS)
+        self.table = dict(list(self.table.items())[-MAX_MARKOV_PREFIXES:])
+        for key, suffixes in list(self.table.items()):
+            self.table[key] = keep_latest_unique(suffixes, MAX_MARKOV_SUFFIXES_PER_PREFIX)
 
 
 class FakeLLM:
@@ -454,6 +495,21 @@ def latest_user_text(messages):
         if message.get("role") == "user":
             return content_to_text(message.get("content", ""))
     return ""
+
+
+def keep_latest_unique(items, limit):
+    """重複を落としつつ、短期記憶として新しい項目を優先して残す。"""
+    seen = set()
+    kept = []
+    for item in reversed(items):
+        marker = json.dumps(item, ensure_ascii=False, sort_keys=True) if isinstance(item, dict) else item
+        if marker in seen:
+            continue
+        seen.add(marker)
+        kept.append(item)
+        if limit is not None and len(kept) >= limit:
+            break
+    return list(reversed(kept))
 
 
 def default_state_file(data_dir=None):
