@@ -2,6 +2,8 @@
 
 [日本語 README](README.ja.md)
 
+[developer blog](https://https://blogger.kinkuman.net/2026/06/fake-llm.html "fake-llm: LLMのふりをする小さな人工無能サーバを作った")
+
 A tiny fake LLM server for local testing.
 
 It pretends to be an LLM through a small Chat Completions-compatible API shape,
