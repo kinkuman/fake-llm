@@ -2,7 +2,7 @@
 
 [日本語 README](README.ja.md)
 
-[developer blog](https://https://blogger.kinkuman.net/2026/06/fake-llm.html "fake-llm: LLMのふりをする小さな人工無能サーバを作った")
+[developer blog](https://blogger.kinkuman.net/2026/06/fake-llm.html "fake-llm: LLMのふりをする小さな人工無能サーバを作った")
 
 A tiny fake LLM server for local testing.
 
