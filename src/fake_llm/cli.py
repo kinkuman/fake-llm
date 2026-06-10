@@ -21,17 +21,30 @@ from .bot import (
 )
 
 
-def chat(data_dir=None, state_file=None):
+def chat(data_dir=None, state_file=None, system_prompt=None, system_file=None, force_system_patterns=False):
     """簡単な terminal chat loop を開始する。"""
     bot = FakeLLM(data_dir=data_dir, state_file=state_file)
+    system_text = load_system_prompt(system_prompt, system_file)
+    system_messages = [{"role": "system", "content": system_text}] if system_text else []
     print("Enter empty text to quit.")
     while True:
         text = input("you > ").rstrip()
         if not text:
             break
-        response = bot.reply([{"role": "user", "content": text}])
+        messages = system_messages + [{"role": "user", "content": text}]
+        response = bot.reply(messages, force_system_patterns=force_system_patterns)
         print("bot > " + response)
     bot.save()
+
+
+def load_system_prompt(system_prompt=None, system_file=None):
+    """CLI chat に system message 入力欄がないため引数から本文を組み立てる。"""
+    parts = []
+    if system_prompt:
+        parts.append(system_prompt)
+    if system_file:
+        parts.append(Path(system_file).read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 def show_state(data_dir=None, state_file=None):
@@ -101,6 +114,9 @@ def main(argv=None):
     chat_parser = subparsers.add_parser("chat", help="start a terminal chat")
     chat_parser.add_argument("--data-dir")
     chat_parser.add_argument("--state-file")
+    chat_parser.add_argument("--system-prompt")
+    chat_parser.add_argument("--system-file")
+    chat_parser.add_argument("--force-system-patterns", action="store_true")
 
     serve_parser = subparsers.add_parser("serve", help="start the compatible HTTP API")
     serve_parser.add_argument("--host", default="127.0.0.1")
@@ -108,6 +124,7 @@ def main(argv=None):
     serve_parser.add_argument("--data-dir")
     serve_parser.add_argument("--state-file")
     serve_parser.add_argument("--quiet", action="store_true")
+    serve_parser.add_argument("--force-system-patterns", action="store_true")
 
     state_parser = subparsers.add_parser("state", help="inspect or reset saved state")
     state_subparsers = state_parser.add_subparsers(dest="state_command")
@@ -122,7 +139,14 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     if args.command == "serve":
-        serve(host=args.host, port=args.port, data_dir=args.data_dir, state_file=args.state_file, quiet=args.quiet)
+        serve(
+            host=args.host,
+            port=args.port,
+            data_dir=args.data_dir,
+            state_file=args.state_file,
+            quiet=args.quiet,
+            force_system_patterns=args.force_system_patterns,
+        )
     elif args.command == "state" and args.state_command == "show":
         return show_state(data_dir=args.data_dir, state_file=args.state_file)
     elif args.command == "state" and args.state_command == "reset":
@@ -131,5 +155,11 @@ def main(argv=None):
         state_parser.print_help()
         return 1
     else:
-        chat(data_dir=getattr(args, "data_dir", None), state_file=getattr(args, "state_file", None))
+        chat(
+            data_dir=getattr(args, "data_dir", None),
+            state_file=getattr(args, "state_file", None),
+            system_prompt=getattr(args, "system_prompt", None),
+            system_file=getattr(args, "system_file", None),
+            force_system_patterns=getattr(args, "force_system_patterns", False),
+        )
     return 0

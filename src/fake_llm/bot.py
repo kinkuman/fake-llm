@@ -23,6 +23,8 @@ MAX_LEARNED_TEMPLATES_PER_COUNT = 30
 MAX_MARKOV_STARTS = 200
 MAX_MARKOV_PREFIXES = 400
 MAX_MARKOV_SUFFIXES_PER_PREFIX = 20
+SYSTEM_PATTERN_PREFIX = "pattern:"
+SYSTEM_PATTERN_MOOD = re.compile(r"\s+mood=(-?\d+(?:\.\d+)?)\s*$")
 
 
 class Dictionary:
@@ -393,26 +395,32 @@ class FakeLLM:
         if seed is not None:
             random.seed(seed)
 
-    def reply(self, messages):
+    def reply(self, messages, force_system_patterns=False):
         """Chat Completions 風メッセージに対して assistant 返答を1つ返す。"""
         user_text = latest_user_text(messages)
         if not user_text:
             return random.choice(self.dictionary.random_responses)
         words = tokenize(user_text)
-        self.emotion.update(user_text, self.dictionary.patterns)
-        response = self._choose_response(user_text, words)
+        system_patterns = system_patterns_from_messages(messages)
+        active_patterns = system_patterns + self.dictionary.patterns
+        self.emotion.update(user_text, active_patterns)
+        response = None
+        if force_system_patterns:
+            response = self._pattern_response(user_text, system_patterns)
+        if response is None:
+            response = self._choose_response(user_text, words, active_patterns)
         self.dictionary.study(user_text, words)
         self.markov.learn(words)
         self.history.append((user_text, response))
         return response
 
-    def _choose_response(self, text, words):
+    def _choose_response(self, text, words, patterns=None):
         """本家寄りに what、pattern、template、markov、random から返答を選ぶ。"""
         responder = self._select_responder()
         if responder == "what":
             return self._what_response(text)
         if responder == "pattern":
-            return self._pattern_response(text) or self._random_response()
+            return self._pattern_response(text, patterns) or self._random_response()
         if responder == "template":
             return self._template_response(words) or self._random_response()
         if responder == "markov":
@@ -429,9 +437,10 @@ class FakeLLM:
                 return name
         return "random"
 
-    def _pattern_response(self, text):
+    def _pattern_response(self, text, patterns=None):
         """最初に一致した正規表現ルールからランダムに返答を返す。"""
-        for rule in self.dictionary.patterns:
+        active_patterns = patterns if patterns is not None else self.dictionary.patterns
+        for rule in active_patterns:
             match = rule.match(text)
             if match:
                 response = rule.choose_response(self.emotion.mood)
@@ -495,6 +504,53 @@ def latest_user_text(messages):
         if message.get("role") == "user":
             return content_to_text(message.get("content", ""))
     return ""
+
+
+def system_prompt_text(messages):
+    """複数の system message を一時ルール用のテキストとして連結する。"""
+    parts = []
+    for message in messages or []:
+        if message.get("role") == "system":
+            text = content_to_text(message.get("content", ""))
+            if text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def system_patterns_from_messages(messages):
+    """system prompt からリクエスト中だけ有効な pattern ルールを作る。"""
+    return parse_system_patterns(system_prompt_text(messages))
+
+
+def parse_system_patterns(text):
+    """GUI で書きやすい独自記法を PatternRule の一覧へ変換する。"""
+    patterns = []
+    for line in str(text or "").splitlines():
+        rule = parse_system_pattern_line(line)
+        if rule is not None:
+            patterns.append(rule)
+    return patterns
+
+
+def parse_system_pattern_line(line):
+    """壊れた system pattern が会話全体を止めないよう1行ずつ安全に読む。"""
+    line = line.strip()
+    if not line.startswith(SYSTEM_PATTERN_PREFIX) or "=>" not in line:
+        return None
+    pattern_text, response_text = line[len(SYSTEM_PATTERN_PREFIX):].split("=>", 1)
+    pattern_text = pattern_text.strip()
+    response_text = response_text.strip()
+    if not pattern_text or not response_text:
+        return None
+    mood_delta = 0
+    mood_match = SYSTEM_PATTERN_MOOD.search(response_text)
+    if mood_match:
+        mood_delta = float(mood_match.group(1))
+        response_text = response_text[:mood_match.start()].strip()
+    try:
+        return PatternRule(pattern_text, response_text, mood_delta)
+    except re.error:
+        return None
 
 
 def keep_latest_unique(items, limit):

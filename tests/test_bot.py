@@ -1,3 +1,6 @@
+"""fake-llm 会話エンジンの主要な振る舞いを検証するテスト。"""
+
+import json
 import unittest
 import tempfile
 from pathlib import Path
@@ -11,6 +14,7 @@ from fake_llm.bot import (
     Emotion,
     FakeLLM,
     PatternRule,
+    parse_system_patterns,
     tokenize,
 )
 
@@ -49,6 +53,59 @@ class BotTest(unittest.TestCase):
             self.assertTrue(bot._choose_response("みかん", tokenize("みかん")))
         with patch.object(bot, "_select_responder", return_value="random"):
             self.assertIn(bot._choose_response("こんにちは", []), bot.dictionary.random_responses)
+
+    def test_system_pattern_is_used_first_in_pattern_responder(self):
+        bot = FakeLLM(seed=1)
+        messages = [
+            {"role": "system", "content": "pattern: ^こんにちは$ => system hello"},
+            {"role": "user", "content": "こんにちは"},
+        ]
+        with patch.object(bot, "_select_responder", return_value="pattern"):
+            self.assertEqual(bot.reply(messages), "system hello")
+
+    def test_system_pattern_default_does_not_bypass_responder_selection(self):
+        bot = FakeLLM(seed=1)
+        messages = [
+            {"role": "system", "content": "pattern: ^ping$ => pong"},
+            {"role": "user", "content": "ping"},
+        ]
+        with patch.object(bot, "_select_responder", return_value="random"):
+            self.assertNotEqual(bot.reply(messages), "pong")
+
+    def test_force_system_patterns_bypasses_responder_selection(self):
+        bot = FakeLLM(seed=1)
+        messages = [
+            {"role": "system", "content": "pattern: ^ping$ => pong"},
+            {"role": "user", "content": "ping"},
+        ]
+        with patch.object(bot, "_select_responder", return_value="random"):
+            self.assertEqual(bot.reply(messages, force_system_patterns=True), "pong")
+
+    def test_system_patterns_are_not_saved_to_state(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "state.json"
+            bot = FakeLLM(seed=1, state_file=state_file)
+            messages = [
+                {"role": "system", "content": "pattern: ^ping$ => system pong"},
+                {"role": "user", "content": "ping"},
+            ]
+            bot.reply(messages, force_system_patterns=True)
+            bot.save()
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            saved_text = json.dumps(data.get("dictionary", {}), ensure_ascii=False)
+            self.assertNotIn("system pong", saved_text)
+
+    def test_parse_system_patterns_ignores_broken_lines(self):
+        rules = parse_system_patterns(
+            "\n".join([
+                "not a rule",
+                "pattern: [ => broken",
+                "pattern: ^ping$ => pong mood=2",
+            ])
+        )
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0].mood_delta, 2)
+        self.assertEqual(rules[0].choose_response(), "pong")
 
     def test_markov_state_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:

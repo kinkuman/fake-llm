@@ -56,6 +56,41 @@ Any API key string is accepted. This is a local toy server, not an LLM.
 
 `stream: true` is supported with simple Server-Sent Events chunks.
 
+## System Prompt Patterns
+
+You can put temporary pattern responses in a `role: system` message. These
+rules are not saved to `state.json`, and the API server does not carry them
+over to later requests.
+
+```text
+pattern: regex => response1|response2 mood=number
+```
+
+Example:
+
+```json
+{
+  "model": "fake-llm",
+  "messages": [
+    {"role": "system", "content": "pattern: ^ping$ => pong"},
+    {"role": "user", "content": "ping"}
+  ]
+}
+```
+
+By default, system patterns are preferred only when the normal responder
+selection chooses the pattern responder. To force matching system patterns
+before responder selection, start the command with `--force-system-patterns`.
+
+```bash
+uv run fake-llm chat --system-prompt 'pattern: ^ping$ => pong' --force-system-patterns
+uv run fake-llm chat --system-file ./system.txt
+uv run fake-llm serve --host 127.0.0.1 --port 8000 --force-system-patterns
+```
+
+`serve` has no system prompt option. API clients should send system messages
+in each request.
+
 ## Data
 
 The bundled dictionaries under `src/fake_llm/data/` are original small

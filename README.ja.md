@@ -55,6 +55,36 @@ API key は任意の文字列で構いません。これはローカルのおも
 
 `stream: true` は簡易的な Server-Sent Events chunk で対応しています。
 
+## System Prompt Patterns
+
+`role: system` の message に、一時的な pattern 返答を書けます。これは `state.json` には保存されず、API サーバの次リクエストにも持ち越されません。
+
+```text
+pattern: 正規表現 => 返答1|返答2 mood=数値
+```
+
+例。
+
+```json
+{
+  "model": "fake-llm",
+  "messages": [
+    {"role": "system", "content": "pattern: ^ping$ => pong"},
+    {"role": "user", "content": "ping"}
+  ]
+}
+```
+
+デフォルトでは、通常の responder 抽選で pattern 返答が選ばれた時だけ system pattern を優先して使います。必ず system pattern を優先したい場合は、起動時に `--force-system-patterns` を指定します。
+
+```bash
+uv run fake-llm chat --system-prompt 'pattern: ^ping$ => pong' --force-system-patterns
+uv run fake-llm chat --system-file ./system.txt
+uv run fake-llm serve --host 127.0.0.1 --port 8000 --force-system-patterns
+```
+
+`serve` には system prompt 用オプションはありません。API 利用時はリクエストの `messages` に system message を入れてください。
+
 ## Data
 
 `src/fake_llm/data/` にある同梱辞書は、このプロジェクト用の小さなオリジナルサンプルです。直接編集することも、別のデータディレクトリを指定することもできます。

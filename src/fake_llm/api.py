@@ -14,11 +14,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .bot import DEFAULT_MODEL, FakeLLM
 
 
-def chat_completion_response(bot, payload):
+def chat_completion_response(bot, payload, force_system_patterns=False):
     """非 streaming の chat completion 返答 dict を作る。"""
     model = payload.get("model") or DEFAULT_MODEL
     messages = payload.get("messages") or []
-    content = bot.reply(messages)
+    content = bot.reply(messages, force_system_patterns=force_system_patterns)
     created = int(time.time())
     prompt_tokens = estimate_tokens(json.dumps(messages, ensure_ascii=False))
     completion_tokens = estimate_tokens(content)
@@ -65,7 +65,7 @@ def estimate_tokens(text):
     return max(1, len(str(text)) // 4)
 
 
-def make_handler(bot):
+def make_handler(bot, force_system_patterns=False):
     """FakeLLM インスタンスに紐づいた HTTP handler を作る。"""
     class Handler(BaseHTTPRequestHandler):
         """fake-llm の小さな HTTP API を処理する handler。"""
@@ -93,7 +93,7 @@ def make_handler(bot):
                 self._send_json({"error": {"message": "not found"}}, status=404)
                 return
             payload = self._read_json()
-            response = chat_completion_response(bot, payload)
+            response = chat_completion_response(bot, payload, force_system_patterns=force_system_patterns)
             bot.save()
             if payload.get("stream"):
                 self._send_stream(response)
@@ -152,10 +152,10 @@ def chunk_text(text, size=8):
         yield text[index:index + size]
 
 
-def serve(host="127.0.0.1", port=8000, data_dir=None, state_file=None, quiet=False):
+def serve(host="127.0.0.1", port=8000, data_dir=None, state_file=None, quiet=False, force_system_patterns=False):
     """ローカル fake-llm HTTP server を起動して待ち受け続ける。"""
     bot = FakeLLM(data_dir=data_dir, state_file=state_file)
-    server = ThreadingHTTPServer((host, port), make_handler(bot))
+    server = ThreadingHTTPServer((host, port), make_handler(bot, force_system_patterns=force_system_patterns))
     server.quiet = quiet
     print(f"Serving on http://{host}:{port}")
     print("Compatible base URL: " + f"http://{host}:{port}/v1")
@@ -170,5 +170,13 @@ def main(argv=None):
     parser.add_argument("--data-dir")
     parser.add_argument("--state-file")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--force-system-patterns", action="store_true")
     args = parser.parse_args(argv)
-    serve(host=args.host, port=args.port, data_dir=args.data_dir, state_file=args.state_file, quiet=args.quiet)
+    serve(
+        host=args.host,
+        port=args.port,
+        data_dir=args.data_dir,
+        state_file=args.state_file,
+        quiet=args.quiet,
+        force_system_patterns=args.force_system_patterns,
+    )
