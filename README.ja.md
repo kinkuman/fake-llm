@@ -148,3 +148,6 @@ uv run fake-llm state reset --state-file ./state.json
 ## License
 
 MIT.
+
+利用時に作者名やリポジトリ名を紹介していただけると嬉しいです。
+これは必須ではありません。
