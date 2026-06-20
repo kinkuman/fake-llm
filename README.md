@@ -11,6 +11,9 @@ but it is only a local rule-based toy.
 
 Current version: `0.1.0`
 
+A demo using fake-llm from AItuber-kit
+https://github.com/user-attachments/assets/0a81f5ac-1dec-4fa1-bcb2-f139e9b92103
+
 ## Quick Start
 
 ```bash
